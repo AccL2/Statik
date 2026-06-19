@@ -1,341 +1,106 @@
-"""
-=============================================================
-  MÓDULO: estructuras.py
-  Biblioteca de cálculos - Estructuras y Resistencia de Materiales
-  Autor: [Tu nombre]
-  Versión: 1.0
-=============================================================
+import streamlit as st
 
-CÓMO USAR ESTE MÓDULO:
-  En tu script Python, escribí al principio:
-    from estructuras import seccion_rectangular, tension_normal, ...
+st.set_page_config(page_title="Holzbau Swiss Tool", layout="wide")
 
-  O importá todo:
-    import estructuras
-    estructuras.tension_normal(F=1000, A=50)
-"""
+st.title("🏗️ Masterclass: Viga Cajón de Doble Nervio")
+st.write("Configuración: Tablero CLT inferior + 2 Nervios (Tricapa + Obergurt superior).")
 
-import math
+# --- PESTAÑAS ---
+tab1, tab2, tab3 = st.tabs(["📐 1. Geometría", "⚖️ 2. Cargas", "📊 3. Memoria de Cálculo"])
 
+# --- PESTAÑA 1: GEOMETRÍA ---
+with tab1:
+    st.header("Definición de la Sección")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Base (Untergurt)")
+        b_clt = st.number_input("Ancho tablero CLT (mm)", value=1000)
+        h_clt = st.number_input("Espesor tablero CLT (mm)", value=60)
+        
+    with col2:
+        st.subheader("Nervios (Stege + Obergurt)")
+        n_nervios = st.number_input("Número de nervios", value=2)
+        b_tricapa = st.number_input("Ancho viga Tricapa (mm)", value=40)
+        h_tricapa = st.number_input("Canto viga Tricapa (mm)", value=240)
+        b_ober = st.number_input("Ancho Obergurt superior (mm)", value=80)
+        h_ober = st.number_input("Espesor Obergurt superior (mm)", value=40)
 
-# =============================================================
-# 1. PROPIEDADES GEOMÉTRICAS DE SECCIONES TRANSVERSALES
-# =============================================================
+    # --- CÁLCULOS GEOMÉTRICOS ---
+    # Alturas de centros de gravedad desde la base (y=0)
+    y_clt = h_clt / 2
+    y_tri = h_clt + (h_tricapa / 2)
+    y_obe = h_clt + h_tricapa + (h_ober / 2)
+    h_total = h_clt + h_tricapa + h_ober
 
-def seccion_rectangular(b, h):
-    """
-    Calcula las propiedades de una sección rectangular.
+    # Áreas
+    A_clt = b_clt * h_clt
+    A_tri_tot = n_nervios * (b_tricapa * h_tricapa)
+    A_obe_tot = n_nervios * (b_ober * h_ober)
+    A_total = A_clt + A_tri_tot + A_obe_tot
 
-    Parámetros:
-        b (float): Ancho de la sección [mm, cm, m — la unidad que uses]
-        h (float): Alto de la sección [misma unidad que b]
+    # Eje Neutro (Steiner)
+    y_gc = (A_clt * y_clt + A_tri_tot * y_tri + A_obe_tot * y_obe) / A_total
 
-    Retorna:
-        dict con: Area, Momento de Inercia Ix e Iy, Módulo resistente Wx e Wy
+    # Inercia Total (I_propio + A*d^2)
+    I_clt = (b_clt * h_clt**3)/12 + A_clt * (y_clt - y_gc)**2
+    I_tri = n_nervios * ((b_tricapa * h_tricapa**3)/12 + (b_tricapa * h_tricapa) * (y_tri - y_gc)**2)
+    I_obe = n_nervios * ((b_ober * h_ober**3)/12 + (b_ober * h_ober) * (y_obe - y_gc)**2)
+    I_total = I_clt + I_tri + I_obe
 
-    Ejemplo:
-        seccion_rectangular(b=200, h=400)  → sección de 200x400 mm
-    """
-    A   = b * h
-    Ix  = (b * h**3) / 12      # Inercia respecto al eje X (horizontal)
-    Iy  = (h * b**3) / 12      # Inercia respecto al eje Y (vertical)
-    Wx  = Ix / (h / 2)         # Módulo resistente respecto a X
-    Wy  = Iy / (b / 2)         # Módulo resistente respecto a Y
+    st.success(f"Sección procesada. Eje Neutro a {y_gc:.2f} mm de la base.")
 
-    return {
-        "Sección": "Rectangular",
-        "b": b,
-        "h": h,
-        "A":  round(A,  4),
-        "Ix": round(Ix, 4),
-        "Iy": round(Iy, 4),
-        "Wx": round(Wx, 4),
-        "Wy": round(Wy, 4),
-    }
+# --- PESTAÑA 2: CARGAS ---
+with tab2:
+    st.header("Solicitaciones")
+    L_m = st.number_input("Luz de la viga (m)", value=4.5)
+    q_knm = st.number_input("Carga total (kN/m)", value=5.0)
+    
+    M_ed = (q_knm * L_m**2 / 8) * 1e6 # Nmm
+    V_ed = (q_knm * L_m / 2) * 1000   # N
 
+# --- PESTAÑA 3: MEMORIA DE CÁLCULO ---
+with tab3:
+    st.header("🧮 Análisis Mecánico Paso a Paso")
+    
+    # 1. Inercia
+    st.subheader("1. Rigidez Flexural")
+    st.write(f"Inercia total de la sección compuesta: **{I_total:,.0f} mm⁴**")
+    
+    # 2. Tensiones de Flexión
+    st.subheader("2. Tensiones Normales")
+    sigma_top = (M_ed * (h_total - y_gc)) / I_total
+    sigma_bot = (M_ed * y_gc) / I_total
+    
+    c1, c2 = st.columns(2)
+    c1.metric("Compresión en Obergurt", f"{sigma_top:.2f} N/mm²")
+    c2.metric("Tracción en CLT inferior", f"{sigma_bot:.2f} N/mm²")
 
-def seccion_circular(d):
-    """
-    Calcula las propiedades de una sección circular sólida.
+    st.divider()
 
-    Parámetros:
-        d (float): Diámetro [mm, cm, m]
+    # 3. Cortante (El alma Tricapa)
+    st.subheader("3. Esfuerzo Cortante")
+    # Momento estático del Obergurt superior para ver el rasante
+    Q_ober = A_obe_tot * (y_obe - y_gc)
+    b_almas = n_nervios * b_tricapa
+    tau_alma = (V_ed * Q_ober) / (I_total * b_almas)
+    
+    st.latex(r"\tau = \frac{V \cdot Q}{I \cdot b_{almas}}")
+    st.info(f"Tensión cortante en almas: **{tau_alma:.2f} N/mm²**")
 
-    Ejemplo:
-        seccion_circular(d=150)  → sección circular de Ø150 mm
-    """
-    r  = d / 2
-    A  = math.pi * r**2
-    I  = (math.pi * d**4) / 64   # Inercia (igual en X e Y por simetría)
-    W  = I / r                   # Módulo resistente
+    st.divider()
 
-    return {
-        "Sección": "Circular",
-        "d": d,
-        "A": round(A, 4),
-        "I": round(I, 4),
-        "W": round(W, 4),
-    }
-
-
-def seccion_tubular(D, e):
-    """
-    Calcula las propiedades de una sección circular hueca (tubo).
-
-    Parámetros:
-        D (float): Diámetro exterior [mm]
-        e (float): Espesor de pared  [mm]
-
-    Ejemplo:
-        seccion_tubular(D=168.3, e=8)  → tubo 168.3 x 8 mm
-    """
-    d  = D - 2 * e              # Diámetro interior
-    A  = (math.pi / 4) * (D**2 - d**2)
-    I  = (math.pi / 64) * (D**4 - d**4)
-    W  = I / (D / 2)
-
-    return {
-        "Sección": "Tubular",
-        "D_ext": D,
-        "D_int": round(d, 4),
-        "e": e,
-        "A": round(A, 4),
-        "I": round(I, 4),
-        "W": round(W, 4),
-    }
-
-
-# =============================================================
-# 2. TENSIONES INTERNAS
-# =============================================================
-
-def tension_normal(N, A):
-    """
-    Tensión normal por carga axial (tracción o compresión).
-
-    Fórmula:  σ = N / A
-
-    Parámetros:
-        N (float): Fuerza axial  [N, kN — la unidad que uses]
-        A (float): Área de la sección [mm², cm², m²]
-
-    Ejemplo:
-        tension_normal(N=50000, A=2500)  → σ en N/mm² (MPa)
-    """
-    sigma = N / A
-    return {
-        "N": N,
-        "A": A,
-        "sigma (σ)": round(sigma, 4),
-    }
-
-
-def tension_flexion(M, W):
-    """
-    Tensión normal por flexión (fibra extrema).
-
-    Fórmula:  σ = M / W
-
-    Parámetros:
-        M (float): Momento flector [N·mm, kN·m — la unidad que uses]
-        W (float): Módulo resistente de la sección [mm³, cm³]
-
-    Ejemplo:
-        tension_flexion(M=12e6, W=10666.67)
-    """
-    sigma = M / W
-    return {
-        "M": M,
-        "W": W,
-        "sigma (σ)": round(sigma, 4),
-    }
-
-
-def tension_combinada(N, A, M, W):
-    """
-    Tensión combinada = axial + flexión.
-
-    Fórmula:  σ_max = N/A + M/W
-              σ_min = N/A - M/W
-
-    Parámetros:
-        N (float): Fuerza axial
-        A (float): Área de la sección
-        M (float): Momento flector
-        W (float): Módulo resistente
-
-    Ejemplo:
-        tension_combinada(N=10000, A=2000, M=5e6, W=8000)
-    """
-    sigma_axial   = N / A
-    sigma_flexion = M / W
-    sigma_max     = sigma_axial + sigma_flexion
-    sigma_min     = sigma_axial - sigma_flexion
-
-    return {
-        "σ_axial":   round(sigma_axial,   4),
-        "σ_flexión": round(sigma_flexion, 4),
-        "σ_max":     round(sigma_max,     4),
-        "σ_min":     round(sigma_min,     4),
-    }
-
-
-def tension_corte(V, Q, I, b):
-    """
-    Tensión de corte en una sección (fórmula de Jourawski).
-
-    Fórmula:  τ = (V · Q) / (I · b)
-
-    Parámetros:
-        V (float): Fuerza cortante
-        Q (float): Momento estático del área parcial respecto al centroide
-        I (float): Momento de inercia de la sección completa
-        b (float): Ancho de la sección en el punto de cálculo
-
-    Ejemplo:
-        tension_corte(V=30000, Q=120000, I=5.33e8, b=200)
-    """
-    tau = (V * Q) / (I * b)
-    return {
-        "V": V,
-        "Q": Q,
-        "I": I,
-        "b": b,
-        "tau (τ)": round(tau, 6),
-    }
-
-
-# =============================================================
-# 3. DEFORMACIONES - VIGAS SIMPLES
-# =============================================================
-
-def flecha_viga_centro(P, L, E, I):
-    """
-    Flecha máxima en el centro de una viga simplemente apoyada
-    con carga puntual centrada.
-
-    Fórmula:  δ_max = P·L³ / (48·E·I)
-
-    Parámetros:
-        P (float): Carga puntual [N, kN]
-        L (float): Luz de la viga [mm, m]
-        E (float): Módulo de elasticidad [MPa, GPa]
-        I (float): Momento de inercia [mm⁴, m⁴]
-
-    Ejemplo (unidades SI con mm y N):
-        flecha_viga_centro(P=10000, L=4000, E=210000, I=5413.3e4)
-    """
-    delta = (P * L**3) / (48 * E * I)
-    return {
-        "P": P,
-        "L": L,
-        "E": E,
-        "I": I,
-        "δ_max": round(delta, 6),
-    }
-
-
-def flecha_viga_carga_uniforme(q, L, E, I):
-    """
-    Flecha máxima en el centro de una viga simplemente apoyada
-    con carga uniformemente distribuida.
-
-    Fórmula:  δ_max = 5·q·L⁴ / (384·E·I)
-
-    Parámetros:
-        q (float): Carga distribuida [N/mm, kN/m]
-        L (float): Luz de la viga
-        E (float): Módulo de elasticidad
-        I (float): Momento de inercia
-
-    Ejemplo:
-        flecha_viga_carga_uniforme(q=5, L=4000, E=210000, I=5413.3e4)
-    """
-    delta = (5 * q * L**4) / (384 * E * I)
-    return {
-        "q": q,
-        "L": L,
-        "E": E,
-        "I": I,
-        "δ_max": round(delta, 6),
-    }
-
-
-# =============================================================
-# 4. MATERIALES COMUNES (módulos de elasticidad en MPa)
-# =============================================================
-
-MATERIALES = {
-    "Acero estructural":   {"E": 210_000, "nu": 0.30, "fy": 250},   # S275
-    "Acero S355":          {"E": 210_000, "nu": 0.30, "fy": 355},
-    "Hormigón C25/30":     {"E":  31_000, "nu": 0.20, "fck": 25},
-    "Hormigón C30/37":     {"E":  33_000, "nu": 0.20, "fck": 30},
-    "Madera GL24h":        {"E":  11_600, "nu": 0.20, "fm": 24},
-    "Aluminio":            {"E":  70_000, "nu": 0.33, "fy": 270},
-}
-
-def info_material(nombre):
-    """
-    Devuelve las propiedades del material seleccionado.
-
-    Materiales disponibles:
-        'Acero estructural', 'Acero S355', 'Hormigón C25/30',
-        'Hormigón C30/37', 'Madera GL24h', 'Aluminio'
-
-    Ejemplo:
-        info_material('Acero S355')
-    """
-    if nombre in MATERIALES:
-        datos = MATERIALES[nombre].copy()
-        datos["Material"] = nombre
-        return datos
+    # 4. Flecha
+    st.subheader("4. Deformación (Estado Límite de Servicio)")
+    E_mean = 11000
+    L_mm = L_m * 1000
+    flecha = (5 * q_knm * L_mm**4) / (384 * E_mean * I_total)
+    
+    st.metric("FLECHA MÁXIMA", f"{flecha:.2f} mm")
+    st.write(f"Límite L/300: **{L_mm/300:.2f} mm**")
+    
+    if flecha < (L_mm/300):
+        st.success("La rigidez es adecuada.")
     else:
-        disponibles = list(MATERIALES.keys())
-        return {"Error": f"Material no encontrado. Disponibles: {disponibles}"}
-
-
-# =============================================================
-# 5. UTILIDAD - IMPRIMIR RESULTADOS ORDENADOS
-# =============================================================
-
-def mostrar(titulo, resultado):
-    """
-    Imprime un diccionario de resultados de forma clara.
-
-    Ejemplo:
-        mostrar("Sección rectangular", seccion_rectangular(200, 400))
-    """
-    print(f"\n{'='*50}")
-    print(f"  {titulo}")
-    print(f"{'='*50}")
-    for clave, valor in resultado.items():
-        print(f"  {clave:<20} {valor}")
-    print(f"{'='*50}\n")
-
-
-# =============================================================
-# ZONA DE PRUEBA — Solo se ejecuta si corrés este archivo
-#                  directamente (no al importarlo)
-# =============================================================
-
-if __name__ == "__main__":
-
-    # --- Ejemplo 1: Propiedades de sección rectangular ---
-    sec = seccion_rectangular(b=200, h=400)
-    mostrar("Sección Rectangular 200x400 mm", sec)
-
-    # --- Ejemplo 2: Tensión normal axial ---
-    tn = tension_normal(N=80_000, A=sec["A"])
-    mostrar("Tensión Normal (N=80 kN)", tn)
-
-    # --- Ejemplo 3: Tensión por flexión ---
-    tf = tension_flexion(M=25e6, W=sec["Wx"])
-    mostrar("Tensión por Flexión (M=25 kN·m)", tf)
-
-    # --- Ejemplo 4: Flecha en viga simplemente apoyada ---
-    mat = info_material("Acero estructural")
-    fl = flecha_viga_centro(P=10_000, L=4_000, E=mat["E"], I=sec["Ix"])
-    mostrar("Flecha máxima (viga 4m, P=10 kN centro)", fl)
-
-    # --- Ejemplo 5: Material ---
-    mostrar("Propiedades del material", mat)
+        st.error("La viga flecta demasiado. Aumenta el canto de la Tricapa.")
